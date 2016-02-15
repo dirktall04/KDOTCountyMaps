@@ -35,6 +35,7 @@ except:
 
 try:
     from KDOT_Imports.dt_logging import ScriptStatusLogging # @UnresolvedImport
+    print "ScriptStatusLogging imported."
 except:
     print "Failed to import from KDOT_Imports.dt_logging"
     scriptSuccess = ""
@@ -188,12 +189,12 @@ def mapFilesTransfer():
         print("\nMaps were copied to the KanPlan server with 1 failure.")
     else:
         print("\nMaps were copied to the KanPlan server with %d failures.") % (thirdRetryFailCount)
-        
+    
     return thirdRetryFailCount
 
 
 if __name__ == "__main__":
-    startTime = (datetime.datetime.now())
+    startTime = (datetime.datetime.now()) 
     print str(startTime) + " starting script"
     failedToTransfer = mapFilesTransfer()
     endTime = datetime.datetime.now()
@@ -206,9 +207,8 @@ if __name__ == "__main__":
     else:
         completionStatus = 'Completed successfully, with ' + failedToTransfer + ' maps not transferred.'
     ScriptStatusLogging('county_map_copy_files_to_server',
-        '\\dt00ar60\D$\arcgisserver\directories\arcgisoutput\countymaps\Update',
-        scriptSuccess, startTime, endTime,
-        completionStatus, pythonLogTable)
+        '\\dt00ar50\D$\arcgisserver\directories\arcgisoutput\countymaps\Update',
+        scriptSuccess, startTime, endTime, completionStatus, pythonLogTable)
     
 else:
     print "county_map_copy_files_to_server script imported"

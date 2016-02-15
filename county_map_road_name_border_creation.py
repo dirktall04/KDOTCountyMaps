@@ -2,16 +2,18 @@
 # -*- coding: utf-8 -*-
 # CountyMapRoadNameBorderCreation.py
 
-# TODO: Add logic to improve the process of 
-# choosing which points to keep.
-# Important to make sure that the poitns
-
 
 # Takes the data from the excel file and puts it into
 # an ESRI geodatabase for easier use in other scripts.
 
 # Use a searchcursor to read in the rows here
 # and apply them to other data.
+
+# TODO: Add logic to improve the process of 
+# choosing which points to keep.
+# Important to make sure that the points
+# which are the closest to 0/90/180/270 degrees
+# are given priority.
 
 import os
 import xlrd
