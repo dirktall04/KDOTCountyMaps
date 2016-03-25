@@ -21,7 +21,7 @@ import random
 
 import datetime
 
-from county_map_config import pythonLogTable
+from county_map_config import pythonLogTable, copy_map_server
 
 try:
     from KDOT_Imports.dt_logging import scriptSuccess # @UnresolvedImport
@@ -41,15 +41,15 @@ except:
     scriptSuccess = ""
     scriptFailure = ""
     def ScriptStatusLogging(taskName = 'county_map_copy_files_to_server',
-                        taskTarget = '\\dt00ar60\D$\arcgisserver\directories\arcgisoutput\countymaps\Update',
+                        taskTarget = r'\\' + copy_map_server + '\D$\arcgisserver\directories\arcgisoutput\County',
                         completionStatus = scriptFailure, taskStartDateTime = datetime.datetime.now(), 
                         taskEndDateTime = datetime.datetime.now(), completionMessage = 'Unexpected Error.',
                         tableForLogs = pythonLogTable):
         print "ScriptStatusLogging import failed."
 
 
-sourceLocation = r"\\dt00mh02\Planning\Cart\Maps\MXD\Update" ## Upper level folder that contains the half and quarter inch folders
-targetLocation = r"\\dt00ar60\D$\arcgisserver\directories\arcgisoutput\countymaps\Update" ## Upper level folder that contains the half and quarter inch folders.
+sourceLocation = r"\\dt00mh02\planning\Cart\Maps\County" ## Upper level folder that contains the half and quarter inch folders
+targetLocation = r'\\' + copy_map_server + '\D$\arcgisserver\directories\arcgisoutput\County' ## Upper level folder that contains the half and quarter inch folders.
 
 quarterDirName = r"quarterInch"
 halfDirName = r"halfInch"
@@ -207,7 +207,7 @@ if __name__ == "__main__":
     else:
         completionStatus = 'Completed successfully, with ' + failedToTransfer + ' maps not transferred.'
     ScriptStatusLogging('county_map_copy_files_to_server',
-        '\\dt00ar50\D$\arcgisserver\directories\arcgisoutput\countymaps\Update',
+        r'\\' + copy_map_server + '\D$\arcgisserver\directories\arcgisoutput\County',
         scriptSuccess, startTime, endTime, completionStatus, pythonLogTable)
     
 else:

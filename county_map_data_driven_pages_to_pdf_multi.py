@@ -57,14 +57,14 @@ import datetime
 from county_map_config import pythonLogTable, searchFC  # @UnusedImport
 
 
-mapsDirectory = r"\\gisdata\Planning\Cart\Maps\MXD\Update"
+mapsDirectory = r"\\gisdata\Planning\Cart\Maps\County"
 originalMapType = r"countyMap"
 env.workspace = mapsDirectory
 
 # Look at changing this this to a local disk location and then copy from that location to
 # the F drive location after the subprocesses have completed.
 
-outputDirectory = r"\\gisdata\Planning\Cart\Maps\MXD\Update"
+outputDirectory = r"\\gisdata\Planning\Cart\Maps\County"
 
 exportPDFs = 0
 exportPNGs = 1
