@@ -2,19 +2,18 @@
 # -*- coding: utf-8 -*-
 # CountyMapRoadNameBorderCreation.py
 
+
 # Takes the data from the excel file and puts it into
 # an ESRI geodatabase for easier use in other scripts.
 
-# Use a searchcursor to read in the rows there
+# Use a searchcursor to read in the rows here
 # and apply them to other data.
 
-# 2016-03-17 Update -- Added logic to improve
-# the process of choosing which points to keep.
-# Also included a fix for certain features
-# not getting extended correctly.
-# Improved formatting for functions
-# after the End of MapPreprocessing.
-
+# TODO: Add logic to improve the process of 
+# choosing which points to keep.
+# Important to make sure that the points
+# which are the closest to 0/90/180/270 degrees
+# are given priority.
 
 import os
 import xlrd
@@ -38,11 +37,6 @@ excelSettingsLocation = r'\\dt00mh02\Planning\Cart\Maps\County\CountyMapDataDriv
 
 from county_map_config import sdeProdLocation, sqlGdbLocation
 
-# Modify this so that it gets the correct sqlGdbLocation from
-# the county_map_config file using the socket module.
-# Override sqlGdbLocation for testing
-##sqlGdbLocation = r'C:\KDOT_Python\DB_Connections\geo@countyMaps.sde'
-
 sdeProdUser  = 'SHARED.'
 sharedNonStateSystem = os.path.join(sdeProdLocation, sdeProdUser + 'Non_State_System')
 sharedCounties = os.path.join(sdeProdLocation, sdeProdUser + 'COUNTIES')
@@ -51,8 +45,7 @@ sharedStateBridges = os.path.join(sdeProdLocation, sdeProdUser + 'GIS_BRIDGE_DET
 sharedCityLimits = os.path.join(sdeProdLocation, sdeProdUser + 'CITY_LIMITS')
 sharedCountyLines = os.path.join(sdeProdLocation, sdeProdUser + 'COUNTY_LINES')
 
-#Override sqlGdbUser for testing
-##sqlGdbUser = 'countyMaps.GEO.'
+
 sqlGdbUser = 'mapAutomation.GEO.'
 countyMapSizes = os.path.join(sqlGdbLocation, sqlGdbUser + 'CountyMapSizes')
 countyStateBridges= os.path.join(sqlGdbLocation, sqlGdbUser + 'County_State_Bridges')
@@ -73,12 +66,8 @@ countiesNoZEraseBuffer = os.path.join(inMemGDB, 'Counties_No_Z_Erase_Buffer')
 countiesNoZExtensionBuffer_Q = os.path.join(inMemGDB, 'Counties_No_Z_Extension_Buffer_Q')
 countiesNoZExtensionBuffer_H = os.path.join(inMemGDB, 'Counties_No_Z_Extension_Buffer_H')
 nSSForPointCreation = os.path.join(inMemGDB, 'Non_State_System_For_Point_Creation')
-nSSForPointCreationSP = os.path.join(inMemGDB, 'Non_State_System_For_Point_Creation_SP')
 countyLinesDissolved = os.path.join(inMemGDB, 'CountyLinesDissolved')
 countiesBuffered = os.path.join(inMemGDB, 'CountiesBuffered')
-
-bufferDistance_Short = 1200
-shortExtensionDistance = 7500
 
 # Get/use the same projection as the one used for the county roads.
 spatialReferenceProjection = Describe(sharedNonStateSystem).spatialReference
@@ -273,22 +262,6 @@ def countyBuffersAndNon_StateErase():
     
     Erase_analysis(featureClass4, countyPolygonsEraseBuffer, featureClass4Out, xyToleranceVal)
     
-    # Doing a Dissolve followed by an Erase can lead to multipart features.
-    # Multipart features can cause problems in the road line extension function.
-    # Fixed by making all the road lines single part after the Dissolve & Erase functions.
-    try:
-        # Run the tool to create a new fc with only singlepart features
-        MultipartToSinglepart_management(featureClass4Out, nSSForPointCreationSP)
-    
-    except ExecuteError:
-        print GetMessages()
-    except Exception as e:
-        print e
-    
-    # Take the single-part features and replace the previous features with them.
-    Delete_management(featureClass4Out)
-    CopyFeatures_management(nSSForPointCreationSP, featureClass4Out)
-    
     print "Road feature erase complete!"
 
 
@@ -409,7 +382,7 @@ def createCountyLinesForEachCounty():
 
 
 import math
-from math import fabs, radians, sin, cos, floor, sqrt, pow  # @UnusedImport
+from math import radians, sin, cos, floor, sqrt, pow  # @UnusedImport
 import datetime
 
 env.workspace = inMemGDB
@@ -420,13 +393,9 @@ env.outputZFlag = "Disabled"
 # Actually persist these feature class
 #countyRoadsFeature = os.path.join(sqlGdbLocation, sqlGdbUser + 'Non_State_System_For_Point_Creation')
 countyRoadNameRosette_Q = os.path.join(sqlGdbLocation, sqlGdbUser + "countyRoadNameRosette_Q") # quarter
-countyRoadNameRosette_H = os.path.join(sqlGdbLocation, sqlGdbUser + "countyRoadNameRosette_H") # half -- Still need to build the logic to create this.
+countyRoadNameRosette_H = os.path.join(sqlGdbLocation, sqlGdbUser + "countyRoadNameRosette_H") # half
 
-# These go to in_memory, no persistence. Most of these are dependent upon scaling.
-shortCountiesBuffer = os.path.join(inMemGDB, 'shortCountiesBuffer')
-shortExtensionLines = os.path.join(inMemGDB, "shortExtensionLines")
-shortTempRosettePoints = os.path.join(inMemGDB, "shortTempRosettePoints")
-shortTempRosettePointsSP = os.path.join(inMemGDB, "shortTempRosettePointsSP")
+# These to in_memory, no persistence. Most of these are dependent upon scaling, right? Check that.
 countyBorderFeature_Q = os.path.join(inMemGDB, 'Counties_No_Z_Extension_Buffer_Q')
 countyBorderFeature_H = os.path.join(inMemGDB, 'Counties_No_Z_Extension_Buffer_H')
 countyRoadsFeature = os.path.join(inMemGDB, 'Non_State_System_For_Point_Creation')
@@ -437,15 +406,13 @@ tempRoadNameRosette_H = os.path.join(inMemGDB, "tempRoadNameRosette_H")
 tempRoadNameRosetteSinglePoint_Q = os.path.join(inMemGDB, "tempRoadNameRosetteSinglePoint_Q")
 tempRoadNameRosetteSinglePoint_H = os.path.join(inMemGDB, "tempRoadNameRosetteSinglePoint_H")
 
-shortExtensionLinesText = 'shortExtensionLines'
-shortTempRosettePointsText = 'shortTempRosettePoints'
-
-# Successfully changed to just one ID column on 8/21/2015
+# Not sure why I need two ID columns here... -- can't I change it to just 1?
+# Trying with just one on 8/21/2015
 roadCursorFields = ["OID@", "SHAPE@", "RD_NAMES", "COUNTY_NUMBER"] 
 countyBorderFields = ["OBJECTID", "SHAPE@XY", "COUNTY_NAME", "COUNTY_NUMBER"]
 countyRoadNameRosetteFields = ["LabelAngle", "COUNTY_NAME", "COUNTY_NUMBER"]
-countyRoadNameRosetteFieldsObjShape = ["OID@", "SHAPE@XY", "roadNameForSplit", "COUNTY_NUMBER", "COUNTY_NAME", "LabelAngle"]
-countyRoadNameRosetteFieldsNoOID = ["SHAPE@XY", "roadNameForSplit", "COUNTY_NUMBER", "COUNTY_NAME", "LabelAngle"]
+countyRoadNameRosetteFieldsObjShape = ["OID@", "SHAPE@XY", "roadNameForSplit", "COUNTY_NUMBER", "COUNTY_NAME"]
+
 
 def FindDuration(endTime, startTime):
     #Takes two datetime.datetime objects, subtracting the 2nd from the first
@@ -502,7 +469,7 @@ def calcPointDistance(point1, point2):
 def getRoadLinesList():
     
     print "Getting the road lines list."
-    # Need a new function here. -- Instead of calling this twice, have a main-style function
+    # Need a new function here. -- Instead of calling this twice, have a main-style funtion
     # call it once and then pass it as an argument to both functions.
     roadCursor = daSearchCursor(countyRoadsFeature, roadCursorFields)  # @UndefinedVariable
     
@@ -533,7 +500,7 @@ def removeSmallRoads():
     # for each road.
     
     # Then, need to add the ObjectID for roads with ShapeLength less than
-    # 750 to a list, then build SQL queries dynamically to select
+    # 1500 to a list, then build SQL queries dynamically to select
     # and add features from that list, until the list is exhausted
     # and all features have been selected.
     
@@ -556,8 +523,18 @@ def removeSmallRoads():
     
     roadIDsToRemove = list()
     
+    '''
     for smallRoadRow in smallRoadsSearchCursor:
-        if smallRoadRow[1] <= 750:
+        if int(str(smallRoadRow[0])) % 500 == 0:
+            print str(smallRoadRow[0])
+        else:
+            pass
+        
+    raise("Stop error.")
+    '''
+    
+    for smallRoadRow in smallRoadsSearchCursor:
+        if smallRoadRow[1] <= 1500:
             roadIDsToRemove.append(smallRoadRow[0])
         else:
             pass
@@ -589,7 +566,7 @@ def removeSmallRoads():
     roadsReductionWhereClause = roadsReductionWhereClause[:-2] + """) """ 
     SelectLayerByAttribute_management(inMemoryRoadsLayer, "ADD_TO_SELECTION", roadsReductionWhereClause)
     
-    # Debug info
+    # Debug only
     print "Selecting..."
     selectedRoadsResult = GetCount_management(inMemoryRoadsLayer)
     selectedRoadsCount = int(selectedRoadsResult.getOutput(0))
@@ -605,37 +582,38 @@ def removeSmallRoads():
         pass
 
 
-# Reorganized to call several smaller functions instead of having
-# all of the logic in one large function that was more difficult to follow.
-def extendAndIntersectRoadFeatures(quarterOrHalf):
-    # Reorganize variables
+# Improve this with the changes made to the angle test employed by the AccidentDirectionMatrixOffset code.
+def extendAndIntersectRoadFeatures(quarterOrHalf): # Place the operations that extend each road line segment by a certain distance here.
+    # Should extend all the features that exist in the post-erase dataset. Might be more difficult
+    # to calculate the angle of these lines accurately, but it should be easier to figure out
+    # than trying to get the lines to split correctly with the buggy SplitLineAtPoint tool.
     
     if quarterOrHalf.lower() == "quarter":
-        createdExtensionLines = createdExtensionLines_Q
         extensionLinesTextName = "createdExtensionLines_Q"
+        createdExtensionLines = createdExtensionLines_Q
         # 9000 ft increase for _Q version.
         # Must be larger than the county bufferDistance (20000)
-        # Boosted extension distance for non-square counties
-        extensionDistance = 61176
+        extensionDistance = 31176
+        extensionLinesTextName = "createdExtensionLines_Q"
         countyRoadNameRosette = countyRoadNameRosette_Q
         rosetteTextName = "countyRoadNameRosette_Q"
         tempRoadNameRosette = tempRoadNameRosette_Q
-        #tempRosetteTextName = "tempRoadNameRosette_Q"
+        tempRosetteTextName = "tempRoadNameRosette_Q"
         tempRoadNameRosetteSP = tempRoadNameRosetteSinglePoint_Q
-        #tempRosetteSPTextName = "tempRoadNameRosetteSinglePoint_Q"
+        tempRosetteSPTextName = "tempRoadNameRosetteSinglePoint_Q"
         countyBorderFeature = countyBorderFeature_Q
     elif quarterOrHalf.lower() == "half":
-        createdExtensionLines = createdExtensionLines_H
         extensionLinesTextName = "createdExtensionLines_H"
+        createdExtensionLines = createdExtensionLines_H
         # Must be larger than the county bufferDistance (11000)
-        # Boosted extension distance for non-square counties
-        extensionDistance = 52176
+        extensionDistance = 22176
+        extensionLinesTextName = "createdExtensionLines_H"
         countyRoadNameRosette = countyRoadNameRosette_H
         rosetteTextName = "countyRoadNameRosette_H"
         tempRoadNameRosette = tempRoadNameRosette_H
-        #tempRosetteTextName = "tempRoadNameRosette_H"
+        tempRosetteTextName = "tempRoadNameRosette_H"
         tempRoadNameRosetteSP = tempRoadNameRosetteSinglePoint_H
-        #tempRosetteSPTextName = "tempRoadNameRosetteSinglePoint_H"
+        tempRosetteSPTextName = "tempRoadNameRosetteSinglePoint_H"
         countyBorderFeature = countyBorderFeature_H
     else:
         print "quarterOrHalf variable not correctly defined."
@@ -643,46 +621,196 @@ def extendAndIntersectRoadFeatures(quarterOrHalf):
     
     print "Starting to extend and intersect road features."
     
+    if Exists(createdExtensionLines):
+        Delete_management(createdExtensionLines)
+    else:
+        pass
     
-    # Create the extension lines layer
-    initializeExtensionLines(shortExtensionLines, shortExtensionLinesText)
+    
+    CreateFeatureclass_management(inMemGDB, extensionLinesTextName, "POLYLINE", "", "", "", spatialReferenceProjection)
+    
+    # Add a column for roadname called roadNameForSplit.
+    AddField_management(createdExtensionLines, "roadNameForSplit", "TEXT", "", "", "55")
+    
+    # Add a column which stores the angle to display a label called called LabelAngle.
+    AddField_management(createdExtensionLines, "LabelAngle", "DOUBLE", "", "", "") # Change to double.
+    
+    # Add a column which stores the County Number.
+    AddField_management(createdExtensionLines, "County_Number", "DOUBLE", "", "", "")
+    
+    roadLinesToInsertList = list()
     
     roadLinesList = getRoadLinesList()
     
-    # Roadlines extension and angle calculation function
-    extendLinesFromLines(roadLinesList, shortExtensionLines, shortExtensionDistance)
+    for roadLinesItem in roadLinesList:
+        
+        roadNameToUse = roadLinesItem[2]
+        countyNumber = roadLinesItem[3]
+        
+        linePointsArray = ArcgisArray()
+        
+        firstPointTuple = (roadLinesItem[1].firstPoint.X, roadLinesItem[1].firstPoint.Y)
+        lastPointTuple = (roadLinesItem[1].lastPoint.X, roadLinesItem[1].lastPoint.Y)
+        
+        
+        # Make this a two-step process.
+        # Might be as simple as
+        # adding _1 to the end of the first set of variables,
+        # adding _2 to the end of the second set of variables,
+        # then making the extensions in both directions
+        # and creating a new line that has the endpoints
+        # from both sides as it's first and last point.
+        # if necessary, could add the other points in between
+        # but probably not necessary just for generating
+        # an intersection point.
+        
+        
+        yValue_1 = -(lastPointTuple[1] - firstPointTuple[1]) # made y value negative
+        xValue_1 = lastPointTuple[0] - firstPointTuple[0]
+        
+        lineDirectionAngle_1 = math.degrees(math.atan2(xValue_1, yValue_1)) # reversed x and y
+        
+        lineDirectionAngle_1 = -(((lineDirectionAngle_1 + 180) % 360) - 180) # correction for certain quadrants
+        #print "lineDirectionAngle: " + str(lineDirectionAngle_1)
+        
+        origin_x_1 = firstPointTuple[0]
+        origin_y_1 = firstPointTuple[1]
+        
+        
+        yValue_2 = -(firstPointTuple[1] - lastPointTuple[1]) # made y value negative
+        xValue_2 = firstPointTuple[0] - lastPointTuple[0]
+        
+        lineDirectionAngle_2 = math.degrees(math.atan2(xValue_2, yValue_2)) # reversed x and y
+        
+        lineDirectionAngle_2 = -(((lineDirectionAngle_2 + 180) % 360) - 180) # correction for certain quadrants
+        #print "lineDirectionAngle: " + str(lineDirectionAngle_2)
+        
+        origin_x_2 = lastPointTuple[0]
+        origin_y_2 = lastPointTuple[1]
+        
+        (disp_x_1, disp_y_1) = (extensionDistance * math.sin(math.radians(lineDirectionAngle_1)),
+                          extensionDistance * math.cos(math.radians(lineDirectionAngle_1)))
+        
+        (end_x_1, end_y_1) = (origin_x_1 + disp_x_1, origin_y_1 + disp_y_1)
+        
+        
+        (disp_x_2, disp_y_2) = (extensionDistance * math.sin(math.radians(lineDirectionAngle_2)),
+                          extensionDistance * math.cos(math.radians(lineDirectionAngle_2)))
+        
+        (end_x_2, end_y_2) = (origin_x_2 + disp_x_2, origin_y_2 + disp_y_2)
+        
+        startPoint = ArcgisPoint()
+        endPoint = ArcgisPoint()
+        
+        startPoint.ID = 0
+        startPoint.X = end_x_1
+        startPoint.Y = end_y_1
+        
+        endPoint.ID = 1
+        endPoint.X = end_x_2
+        endPoint.Y = end_y_2
+        
+        linePointsArray.add(startPoint)
+        linePointsArray.add(endPoint)
+        
+        newLineFeature = ArcgisPolyLine(linePointsArray)
+        
+        # Need to create an extension for both ends of the line and add them
+        # to the array.
+        
+        #newLineFeature = createdExtensionLinesCursor.newRow()
+        
+        #newLineFeature.SHAPE = linePointsArray
+        
+        lineDirectionOutput = "0"
+        
+        if lineDirectionAngle_1 > 0:
+            lineDirectionOutput = lineDirectionAngle_1
+        elif lineDirectionAngle_2 > 0:
+            lineDirectionOutput = lineDirectionAngle_2
+        else:
+            pass
+        
+        
+        roadLinesToInsertList.append([newLineFeature, roadNameToUse, lineDirectionOutput, countyNumber])
+        
+        #createdExtensionLinesCursor.insertRow([newLineFeature, roadNameToUse, lineDirectionOutput])
+        
+        if "newLineFeature" in locals():
+            del newLineFeature
+        else:
+            pass
     
-    # Create blank county rosette layers.
-    initializeRosettePoints(inMemGDB, shortTempRosettePoints, shortTempRosettePointsText)
-    initializeRosettePoints(sqlGdbLocation, countyRoadNameRosette, rosetteTextName)
+    # Consider building this as a separate list and then just looping
+    # through the list to put it into the cursor instead
+    # of doing logic and inserting into the cursor at the same place.
     
-    layerShortCountiesBufferExtension = r"layerShortCountiesBufferExtension"
-    layerShortExtensionLines = r"layerShortExtensionLines"
     
+    #start editing session
+    #newEditingSession = daEditor(sqlGdbLocation)
+    #newEditingSession.startEditing()
+    #newEditingSession.startOperation()
+    
+    createdExtensionLinesCursor = daInsertCursor(createdExtensionLines, ["SHAPE@", "roadNameForSplit", "LabelAngle", "County_Number"])
+    
+    for roadLinesToInsertItem in roadLinesToInsertList:
+        createdExtensionLinesCursor.insertRow(roadLinesToInsertItem)
+    
+    
+    # End editing session
+    #newEditingSession.stopOperation()
+    #newEditingSession.stopEditing(True)
+    
+    if "createdExtensionLinesCursor" in locals():
+        del createdExtensionLinesCursor
+    else:
+        pass
+    
+    # Remove the previous countyRoadNameRosette so that it can be recreated.
+    if Exists(rosetteTextName):
+        Delete_management(rosetteTextName)
+    else:
+        pass
+    
+    CreateFeatureclass_management(sqlGdbLocation, rosetteTextName, "POINT", "", "", "", spatialReferenceProjection)
+    
+    AddField_management(countyRoadNameRosette, "roadNameForSplit", "TEXT", "", "", "55")
+    
+    AddField_management(countyRoadNameRosette, "LabelAngle", "DOUBLE", "", "", "") # Change to double.
+    
+    AddField_management(countyRoadNameRosette, "County_Number", "DOUBLE", "", "", "")
+    
+    AddField_management(countyRoadNameRosette, "COUNTY_NAME", "TEXT", "", "", "55")
+    
+    
+    # Now then, need to check for the existence
+    # of and delete the point intersection layer
+    # if it exists.
+    
+    # Then, recreate it and the proper fields.
+    
+    inMemoryCountyBorderExtension = "aCountyBorderExtensionBuffer"
+    inMemoryExtensionLines = "aLoadedExtensionLines"
     
     try:
-        Delete_management(layerShortCountiesBufferExtension)
+        Delete_management(inMemoryCountyBorderExtension)
     except:
         pass
     
     try:
-        Delete_management(layerShortExtensionLines)
+        Delete_management(inMemoryExtensionLines)
     except:
         pass
     
+    # Temporary layer, use CopyFeatures_management to persist to disk.
+    MakeFeatureLayer_management(countyBorderFeature, inMemoryCountyBorderExtension) # County Border extension feature
     
-    shortCountyBuffer(countiesNoZ, shortCountiesBuffer, bufferDistance_Short)
+    # Temporary layer, use CopyFeatures_management to persist to disk.
+    MakeFeatureLayer_management(createdExtensionLines, inMemoryExtensionLines) # Line extension feature
     
-    # Temporary layers, use CopyFeatures_management to persist to disk.
-    MakeFeatureLayer_management(shortCountiesBuffer, layerShortCountiesBufferExtension)
-    MakeFeatureLayer_management(shortExtensionLines, layerShortExtensionLines)
-   
     borderFeatureList = getBorderFeatureList(quarterOrHalf)
     
     borderFeatureList = sorted(borderFeatureList, key=lambda feature: feature[3])
-    
-    pointsToOutput = list()
-    
     
     for borderFeature in borderFeatureList:
         borderFeatureName = borderFeature[2]
@@ -691,33 +819,33 @@ def extendAndIntersectRoadFeatures(quarterOrHalf):
         
         countyBorderWhereClause = ' "COUNTY_NUMBER" = ' + str(int(borderFeatureNumber)) + ' '
         
-        SelectLayerByAttribute_management(layerShortCountiesBufferExtension, "NEW_SELECTION", countyBorderWhereClause)
+        SelectLayerByAttribute_management(inMemoryCountyBorderExtension, "NEW_SELECTION", countyBorderWhereClause)
         
-        countyBorderSelectionCount = GetCount_management(layerShortCountiesBufferExtension)
+        countyBorderSelectionCount = GetCount_management(inMemoryCountyBorderExtension)
         
         print "County Borders Selected: " + str(countyBorderSelectionCount)
         
         # Had to single-quote the borderFeatureNumber because it is stored as a string in the table.
-        # Unquoted because it was changed to a float.
-        extensionLinesWhereClause = """ "COUNTY_NUMBER" = """ + str(int(borderFeatureNumber)) + """ """
+        # Unsingle quoted because it was changed to a float.
+        extensionLinesWhereClause = ' "COUNTY_NUMBER" = ' + str(int(borderFeatureNumber)) + ' '
         
-        SelectLayerByAttribute_management(layerShortExtensionLines, "NEW_SELECTION", extensionLinesWhereClause)
+        SelectLayerByAttribute_management(inMemoryExtensionLines, "NEW_SELECTION", extensionLinesWhereClause)
         
-        extensionLineSelectionCount = GetCount_management(layerShortExtensionLines)
+        extensionLineSelectionCount = GetCount_management(inMemoryExtensionLines)
         
         print "Extension Lines Selected: " + str(extensionLineSelectionCount)
         
-        if Exists(shortTempRosettePoints):
-            Delete_management(shortTempRosettePoints)
+        if Exists(tempRosetteTextName):
+            Delete_management(tempRosetteTextName)
         else:
             pass
         
-        if Exists(shortTempRosettePointsSP):
-            Delete_management(shortTempRosettePointsSP)
+        if Exists(tempRosetteSPTextName):
+            Delete_management(tempRosetteSPTextName)
         else:
             pass
         
-        Intersect_analysis([layerShortCountiesBufferExtension, layerShortExtensionLines], shortTempRosettePoints, "ALL", "", "POINT")
+        Intersect_analysis([inMemoryCountyBorderExtension, inMemoryExtensionLines], tempRoadNameRosette, "ALL", "", "POINT")
         
         # Intersect to an output temp layer.
         
@@ -735,218 +863,9 @@ def extendAndIntersectRoadFeatures(quarterOrHalf):
         
         # Change multipoint to singlepoint.
         
-        try:
-            
-            # Run the tool to create a new fc with only singlepart features
-            MultipartToSinglepart_management(shortTempRosettePoints, shortTempRosettePointsSP)
-            
-            # Check if there is a different number of features in the output
-            #   than there was in the input
-            inCount = int(GetCount_management(shortTempRosettePoints).getOutput(0))
-            outCount = int(GetCount_management(shortTempRosettePointsSP).getOutput(0))
-             
-            if inCount != outCount:
-                print "Found " + str(outCount - inCount) + " multipart features."
-                #print "inCount, including multipart = " + str(inCount)
-                #print "outCount, singlepart only = " + str(outCount)
-                
-            else:
-                print "No multipart features were found"
-        
-        except ExecuteError:
-            print GetMessages()
-        except Exception as e:
-            print e
-        
-        # Call the function to select points from a 
-        
-        ## Actually won't do this, there will be another couple of steps
-        ## to deal with moving the points prior to writing it out.
-        ###print "Appending the temp point layer to the county point intersection layer."
-        
-        ### Debug Block Start ###
-        '''
-        Append_management([shortTempRosettePointsSP], countyRoadNameRosette_Test_Fork, "NO_TEST")
-        '''
-        ### Debug Block End ###
-        
-        ###print "Done adding points to the countyRoadNameRosette feature class."
-        
-        ## Might need to add another field to this feature class for the offset on
-        ## labels, then calculate it based off of the SQRT_DIV8 field.
-        
-        # Might also need to check for and erase points that have a label angle which
-        # is more than 20 degrees off from 0, 90, 180, 270, as these are likely to
-        # be minor roads.
-        # ^ Currently doing this.
-        
-        # Consider reorganizing to be more than one function instead of being a ~300 line long function.
-        
-        # Build a drop-in replacement that calls several smaller functions instead of trying to
-        # modify the entire function in place.
-        
-        # Expects a single part point input layer.
-        returnedPoints = duplicateNameAndLabelAngleFixes(shortTempRosettePointsSP)
-        
-        # Spammy debug info.
-        #print "pointsToOutput: " + str(pointsToOutput)
-        #print "returnedPoints: " + str(returnedPoints)
-        
-        pointsToOutput = pointsToOutput + returnedPoints
-        ## ||||||||
-        ## VVVVVVVV
-        # This function will need changes.
-        # 1. Make it intersect the county's actual border,
-        # or a very slightly buffered version of the border first.
-        ### to create a set of points on the county's border.
-        # -- From here on should be in separate function.
-        # 2. Find the points that share a name and are within
-        ### a measured distance of one another.
-        # 2a. Of the points which share names and are within
-        ### a measured distance of one another, find the one
-        ### that has the closest angle to a cardinal direction.
-        # 2b. Delete the points which are not the closest
-        ### to a cardinal direction.
-        ###
-        # Add the first points to a gdb or a map so that they can be viewed and
-        # checked for accuracy.
-        
-        #### Need a hybridized workflow between the previous
-        #### labelAngleNormalization function and the
-        #### duplicateNameRemoval function.
-        
-        #### Break the functionality into smaller
-        #### steps, then recombine them in an order
-        #### that makes more sense.
-    
-    
-    ### * Preferred solution -- 
-    ### : For each point iterated over,
-    ### : Build a list/selection all of the points with the same name.
-    ###################################################################
-    ### : For each of the selected points within a given distance of
-    ### : the point that is being iterated over,
-    ###################################################################
-    ### : Search the already created sets for the point iterated over.
-    ### : If there is not already a set with that point in it,
-    ### : add both points to a new set.
-    ### : If there is already a set with the iterated over point,
-    ### : add both points to that set and stop searching the sets.
-    ###################################################################
-    ### : Within each set, keep the one that is the closest
-    ### : to a cardinal angle and dismiss all the others.
-    ###################################################################
-    ### : Should end up with sets that contain a single point.
-    ### : Add this single point to a list of OIDs to transfer
-    ### : From the shortTempCountyRoadNameRosette to an
-    ### : intermediateCountyRoadNameRosette.
-    
-    ### Visual test output prior to moving to the next portion.
-    
-    '''
-    pointsToOutputNoOID = [outPoint[1:] for outPoint in pointsToOutput]
-    countyRoadNameRosette_Test_Fork_Text = "countyRoadNameRosette_Test_Fork"
-    countyRoadNameRosette_Test_Fork = os.path.join(sqlGdbLocation, sqlGdbUser + countyRoadNameRosette_Test_Fork_Text)
-    
-    initializeRosettePoints(sqlGdbLocation, countyRoadNameRosette_Test_Fork, countyRoadNameRosette_Test_Fork_Text)
-    
-    countyRosettePreExtPointsText = "countyRosettePreExtPoints"
-    countyRosettePreExtPoints = os.path.join(inMemGDB, countyRosettePreExtPointsText)
-    
-    initializeRosettePoints(inMemGDB, countyRosettePreExtPoints, countyRosettePreExtPointsText)
-    
-    newCursor = daInsertCursor(countyRosettePreExtPoints, countyRoadNameRosetteFieldsNoOID)
-    
-    for pointToWrite in pointsToOutputNoOID:
-        newCursor.insertRow(pointToWrite)
-    
-    try:
-        del newCursor
-    except ExecuteError:
-        print GetMessages()
-    except Exception as e:
-        print e
-    '''
-    
-    initializeExtensionLines(createdExtensionLines, extensionLinesTextName)
-    
-    createdExtensionLines = extendLinesFromPoints(pointsToOutput, createdExtensionLines, extensionDistance)
-    
-    layerCountyBorderExtension = "aCountyBorderExtensionBuffer"
-    layerExtensionLines = "aLoadedExtensionLines"
-    
-    try:
-        Delete_management(layerCountyBorderExtension)
-    except:
-        pass
-    
-    try:
-        Delete_management(layerExtensionLines)
-    except:
-        pass
-    
-    # Temporary layer, use CopyFeatures_management to persist to disk.
-    MakeFeatureLayer_management(countyBorderFeature, layerCountyBorderExtension)
-    MakeFeatureLayer_management(createdExtensionLines, layerExtensionLines)
-    
-    borderFeatureList = getBorderFeatureList(quarterOrHalf)
-    
-    borderFeatureList = sorted(borderFeatureList, key=lambda feature: feature[3])
-    
-    ## Can probably define a new function for this loop and it's logic.
-    ## Test without that first though to see if it works correctly before
-    ## the change.
-    
-    for borderFeature in borderFeatureList:
-        borderFeatureName = borderFeature[2]
-        borderFeatureNumber = borderFeature[3]
-        print "borderFeatureName: " + str(borderFeatureName) + " & borderFeatureNumber: " + str(int(borderFeatureNumber))
-        
-        countyBorderWhereClause = ' "COUNTY_NUMBER" = ' + str(int(borderFeatureNumber)) + ' '
-        
-        SelectLayerByAttribute_management(layerCountyBorderExtension, "NEW_SELECTION", countyBorderWhereClause)
-        
-        countyBorderSelectionCount = GetCount_management(layerCountyBorderExtension)
-        
-        print "County Borders Selected: " + str(countyBorderSelectionCount)
-        
-        # Had to single-quote the borderFeatureNumber because it is stored as a string in the table.
-        # Unquoted because it was changed to a float.
-        extensionLinesWhereClause = """ "COUNTY_NUMBER" = """ + str(int(borderFeatureNumber)) + """ """
-        
-        SelectLayerByAttribute_management(layerExtensionLines, "NEW_SELECTION", extensionLinesWhereClause)
-        
-        extensionLineSelectionCount = GetCount_management(layerExtensionLines)
-        
-        print "Extension Lines Selected: " + str(extensionLineSelectionCount)
-        
-        if Exists(tempRoadNameRosette):
-            Delete_management(tempRoadNameRosette)
-        else:
-            pass
-        
-        if Exists(tempRoadNameRosetteSP):
-            Delete_management(tempRoadNameRosetteSP)
-        else:
-            pass
-        
-        Intersect_analysis([layerCountyBorderExtension, layerExtensionLines], tempRoadNameRosette, "ALL", "", "POINT")
-        
-        # Intersect to an output temp layer.
-        
-        # Next, need to loop through all of the counties.
-        
-        # Get the county number and use it to select
-        # a county extension buffer in the county
-        # extension buffers layer.
-        
-        # Then, use the county number to select
-        # all of the lines for that county
-        # in the extension lines layer.
-        
-        # Then, export those to a temp layer in the fgdb.
-        
-        # Convert multipart to singlepart point features.
+        # Was working until I moved from gisprod to sdedev for the data source.
+        # not sure why. Check to make sure projections match.
+        # ^ Fixed.
         
         try:
             
@@ -975,473 +894,17 @@ def extendAndIntersectRoadFeatures(quarterOrHalf):
         
         Append_management([tempRoadNameRosetteSP], countyRoadNameRosette, "NO_TEST")
         
+        # K, worked correctly. Just need to change LabelAngle to a float and it might be what
+        # I want.
+        
         print "Done adding points to the countyRoadNameRosette feature class."
     
-    # Alternatively, you could insert to an in_memory feature class
-    # then CopyFeatures_management from there to disk.
-    #CopyFeatures_management(pointsToOutput, countyRoadNameRosette_Test_Fork)
-    
-    ## Then, add these points to an in_memory layer
-    ## Next, create new extension lines for them.
-    ## Afterwards, intersect those lines with the 
-    ## full county boundary to move the points
-    ## from the short boundary location out to
-    ## the full boundary location -- Will need
-    ## to do this part for both the Half-Inch
-    ## and Quarter-Inch versions, but it might
-    ## be possible to do both at once...
-    ## Check on that as it could speed things
-    ## up significantly, though this might need
-    ## to have some of it's Q vs. H processes
-    ## run earlier in the process if that is
-    ## the case.
-    
-    ###################################################################
-    ### : From the intermediateCountyRoadNameRosette, correct the angles
-    ### : on each of the remaining points so that they are in the
-    ### : label cardinal direction.
-    ###################################################################
-    ### : Then create extension lines from each point.
-    ### : Intersect the extension lines with the Q and H county border
-    ### : buffers to "move" the points to new positions on those buffers
-    ### : instead of having them on the short county border buffer.
-    ################################################################### 
-    ### : Then convert multipart to singlepart and run the name and
-    ### : distance test again to make sure that there are no new
-    ### : duplicates that have been formed.
-    ###################################################################
-    ### : Add the points that pass the test to the output rosette
-    ### : layers that are persisted to disk and make sure that they
-    ### : look right in the map!
-    ###################################################################
-    ### * Pretty long bit of pseudocode, but I'm not sure there's a
-    ### * shorter path that would still make it work accurately.
-
-
-def duplicateNameAndLabelAngleFixes(shortTempRosette): # Rename later.
-    
-    print "Starting hybrid duplicate name and label angle fixes."
-    
-    newCursor = daSearchCursor(shortTempRosette, countyRoadNameRosetteFieldsObjShape)
-    
-    countyNamePointList = list()
-    
-    for eachPoint in newCursor:
-        countyNamePointList.append(eachPoint)
-    
-    try:
-        del newCursor
-    except:
-        pass
-    
-    
-    # Create a grouping from all of the points which share a name
-    # within a particular distance.
-    
-    # From that grouping, see which one has an angle closest
-    # to a cardinal direction (0, 90, 180, 270).
-    
-    pointKeepList = list()
-    
-    ##pointDeleteList = list()
-    
-    pointCheckedList = list()
-    
-    pointsToCompareContainer = list()
-    
-    
-    for pointItem in countyNamePointList:
-        pointsToCompare = list()
-        # Part 1 that prevents putting all the points in the list.
-        #############Debug#####################################
-        if pointItem[3] == 57: # Marion county issue resolution.
-            print 'PointItem OID to consider for adding to comparison lists.' + str(pointItem[0])
-        else:
-            pass
-        if pointItem[0] not in pointCheckedList: 
-            for pointToCheck in countyNamePointList:
-                # If the points share a road name, but not the same ObjectID...
-                # County number check is unnecessary since this called from the border features
-                # loop which processes by county.
-                if  (str(pointItem[2]).lower() == str(pointToCheck[2]).lower()) and (not pointItem[0] == pointToCheck[0]): # and pointItem[3] == pointToCheck[3]
-                    if pointToCheck[3] == 57: # Marion county issue resolution.
-                        print 'pointToCheck OID to consider for adding to comparison lists.' + str(pointToCheck[0])
-                        print 'pointToCheck Road Name: ' + str(pointToCheck[2])
-                    else:
-                        pass
-                    
-                    # Use the distance formula to check to see if these points are within a
-                    # certain distance from one another.
-                    # If so, add the pointToCheck to the pointDeleteList.
-                    distance = 0
-                    point1 = pointItem[1]
-                    point2 = pointToCheck[1]
-                    
-                    distance = calcPointDistance(point1, point2)
-                    
-                    # Part 2 that prevents putting all the points in the list.
-                    if distance >= 0 and distance < 10500 and pointToCheck[0] not in pointCheckedList:
-                        #print "Appending point with OID: " + str(pointToCheck[0])
-                        pointCheckedList.append(pointToCheck[0])
-                        pointsToCompare.append(pointToCheck)
-                    else:
-                        pass
-                else:
-                    pass
-            
-            pointCheckedList.append(pointItem[0])
-            pointsToCompare.append(pointItem)
-            
-        else:
-            pass
-        
-        if (len(pointsToCompare) > 0):
-            pointsToCompareContainer.append(pointsToCompare)
-        else:
-            pass
-    
-    
-    # For each list of points that share a name and are within a particular geographic distance
-    highestKeptOID = 0
-    
-    for pointsList in pointsToCompareContainer:
-        # Sort by each point's label angle difference from a cardinal direction angle.
-        # Select the point that has the smallest difference.
-        sortablePoints = list()
-        
-        for pointItem in pointsList:
-            pointAngle = pointItem[5]
-            pointFromCardinal = getDifferenceFromCardinal(pointAngle)
-            pointItem = list(pointItem)
-            pointItem.append(pointFromCardinal)
-            sortablePoints.append(pointItem)
-        
-        sortedPoints = sorted(sortablePoints, key = lambda listedPoint: listedPoint[6])
-        
-        if len(sortedPoints) > 0:
-            pointToKeep = sortedPoints[0]
-            pointToKeepOID = pointToKeep[0]
-            pointKeepList.append(pointToKeepOID)
-            highestKeptOID = pointToKeep[0]
-        else:
-            pass
-    
-    print "Highest kept OID: " + str(highestKeptOID)
-    
-    ## List comprehension instead of updatecursor/searchcursor.
-    ## Normalize label angles here.
-    keptPointsList = [normalizeAngle(pointItem) for pointItem in countyNamePointList if pointItem[0] in pointKeepList]
-    
-    return keptPointsList
-
-
-def getDifferenceFromCardinal(passedAngle):    
-    differencesList = list()
-    
-    zeroTest = fabs(passedAngle - 0)
-    ninetyTest = fabs(passedAngle - 90)
-    oneEightyTest = fabs(passedAngle - 180)
-    twoSeventyTest = fabs(passedAngle - 270)
-    threeSixtyTest = fabs(passedAngle - 360)
-    
-    differencesList.append(zeroTest)
-    differencesList.append(ninetyTest)
-    differencesList.append(oneEightyTest)
-    differencesList.append(twoSeventyTest)
-    differencesList.append(threeSixtyTest)
-    
-    differencesList = sorted(differencesList)
-    
-    absAngleDistance = differencesList[0]
-    
-    return absAngleDistance
-
-
-def getClosestCardinal(passedAngle):
-    cardinalsList = list()
-    
-    zeroTest = [fabs(passedAngle - 0), 0]
-    ninetyTest = [fabs(passedAngle - 90), 90]
-    oneEightyTest = [fabs(passedAngle - 180), 180]
-    twoSeventyTest = [fabs(passedAngle - 270), 270]
-    threeSixtyTest = [fabs(passedAngle - 360), 0]
-    
-    cardinalsList.append(zeroTest)
-    cardinalsList.append(ninetyTest)
-    cardinalsList.append(oneEightyTest)
-    cardinalsList.append(twoSeventyTest)
-    cardinalsList.append(threeSixtyTest)
-    
-    cardinalsList = sorted(cardinalsList)
-    
-    closestCardinal = cardinalsList[0][1]
-    
-    return closestCardinal
-
-
-def normalizeAngle(inputPoint):
-    inputAngle = inputPoint[5]
-    normalizedAngle = getClosestCardinal(inputAngle)
-    if normalizedAngle == 270:
-        normalizedAngle = 90
-    else:
-        pass
-    normalizedPoint = list(inputPoint)
-    normalizedPoint[5] = normalizedAngle
-    
-    return normalizedPoint
-
-
-def shortCountyBuffer(buffInput, buffOutput, buffDist):
-    print "Now adding the short county polygon buffer..."
-    
-    Buffer_analysis(buffInput, buffOutput, buffDist, "FULL", "", "NONE")
-    
-    print "Done adding the short county polygon buffers!"
-
-
-def initializeExtensionLines(extLines, extLinesText):
-    if Exists(extLines):
-        Delete_management(extLines)
-    else:
-        pass
-    
-    CreateFeatureclass_management(inMemGDB, extLinesText, "POLYLINE", "", "", "", spatialReferenceProjection)
-    
-    # Add a column for roadname called roadNameForSplit.
-    AddField_management(extLines, "roadNameForSplit", "TEXT", "", "", "55")
-    
-    # Add a column which stores the angle to display a label called called LabelAngle.
-    AddField_management(extLines, "LabelAngle", "DOUBLE", "", "", "") # Change to double.
-    
-    # Add a column which stores the County Number.
-    AddField_management(extLines, "County_Number", "DOUBLE", "", "", "")
-
-
-def extendLinesFromLines(linesSource, outputExtLines, lineExtensionDistance): # Give this a better name.
-    roadLinesToInsertList = list()
-    
-    for roadLinesItem in linesSource:
-        
-        roadLineGeometry = roadLinesItem[1]
-
-        roadNameToUse = roadLinesItem[2]
-        countyNumber = roadLinesItem[3]
-        
-        newGeomAndAngle = extendLine(roadLineGeometry, lineExtensionDistance)
-        
-        newLineFeature = newGeomAndAngle[0]
-        
-        lineDirectionOutput = newGeomAndAngle[1]
-        
-        roadLinesToInsertList.append([newLineFeature, roadNameToUse, lineDirectionOutput, countyNumber])
-        
-        if "newLineFeature" in locals():
-            del newLineFeature
-        else:
-            pass
-    
-    
-    extensionLinesCursor = daInsertCursor(outputExtLines, ["SHAPE@", "roadNameForSplit", "LabelAngle", "County_Number"])
-    
-    for roadLinesToInsertItem in roadLinesToInsertList:
-        extensionLinesCursor.insertRow(roadLinesToInsertItem)
-    
-    if "extensionLinesCursor" in locals():
-        del extensionLinesCursor
-    else:
-        pass
-
-
-def extendLine(lineGeometry, extDistance):
-    # Take a polyline geometry, then extend it
-    # by the passed distance and return it. 
-    
-    firstPointTuple = (lineGeometry.firstPoint.X, lineGeometry.firstPoint.Y)
-    lastPointTuple = (lineGeometry.lastPoint.X, lineGeometry.lastPoint.Y)
-    
-    
-    yValue_1 = -(lastPointTuple[1] - firstPointTuple[1]) # made y value negative
-    xValue_1 = lastPointTuple[0] - firstPointTuple[0]
-    
-    lineDirectionAngle_1 = math.degrees(math.atan2(xValue_1, yValue_1)) # reversed x and y
-    
-    lineDirectionAngle_1 = -(((lineDirectionAngle_1 + 180) % 360) - 180) # correction for certain quadrants
-    
-    origin_x_1 = firstPointTuple[0]
-    origin_y_1 = firstPointTuple[1]
-    
-    
-    yValue_2 = -(firstPointTuple[1] - lastPointTuple[1]) # made y value negative
-    xValue_2 = firstPointTuple[0] - lastPointTuple[0]
-    
-    lineDirectionAngle_2 = math.degrees(math.atan2(xValue_2, yValue_2)) # reversed x and y
-    
-    lineDirectionAngle_2 = -(((lineDirectionAngle_2 + 180) % 360) - 180) # correction for certain quadrants
-    
-    origin_x_2 = lastPointTuple[0]
-    origin_y_2 = lastPointTuple[1]
-    
-    
-    (disp_x_1, disp_y_1) = (extDistance * math.sin(math.radians(lineDirectionAngle_1)),
-                      extDistance * math.cos(math.radians(lineDirectionAngle_1)))
-    
-    (end_x_1, end_y_1) = (origin_x_1 + disp_x_1, origin_y_1 + disp_y_1)
-    
-    (disp_x_2, disp_y_2) = (extDistance * math.sin(math.radians(lineDirectionAngle_2)),
-                      extDistance * math.cos(math.radians(lineDirectionAngle_2)))
-    
-    (end_x_2, end_y_2) = (origin_x_2 + disp_x_2, origin_y_2 + disp_y_2)
-    
-    
-    startPoint = ArcgisPoint()
-    endPoint = ArcgisPoint()
-    
-    startPoint.ID = 0
-    startPoint.X = end_x_1
-    startPoint.Y = end_y_1
-    
-    endPoint.ID = 1
-    endPoint.X = end_x_2
-    endPoint.Y = end_y_2
-    
-    linePointsArray = ArcgisArray()
-    linePointsArray.add(startPoint)
-    linePointsArray.add(endPoint)
-    
-    newLineFeature = ArcgisPolyLine(linePointsArray)
-    
-    # Need to create an extension for both ends of the line and add them
-    # to the array.
-    
-    #newLineFeature = createdExtensionLinesCursor.newRow()
-    
-    #newLineFeature.SHAPE = linePointsArray
-    
-    lineDirectionOutput = "0"
-    
-    if lineDirectionAngle_1 > 0:
-        lineDirectionOutput = lineDirectionAngle_1
-    elif lineDirectionAngle_2 > 0:
-        lineDirectionOutput = lineDirectionAngle_2
-    else:
-        pass
-    
-    returnGeomAndAngle = [newLineFeature, lineDirectionOutput]
-    
-    return returnGeomAndAngle
-
-
-def extendLinesFromPoints(pointsSource, outputExtLines, pointExtensionDistance):
-    roadLinesToInsertList = list()
-    
-    for roadPointsItem in pointsSource:
-        roadPointGeometry = roadPointsItem[1]
-        
-        roadNameToUse = roadPointsItem[2]
-        countyNumber = roadPointsItem[3]
-        lineDirectionInput = roadPointsItem[5]
-        
-        newGeomAndAngle = extendPoint(roadPointGeometry, lineDirectionInput, pointExtensionDistance)
-        
-        newLineFeature = newGeomAndAngle[0]
-        
-        lineDirectionOutput = newGeomAndAngle[1]
-        
-        roadLinesToInsertList.append([newLineFeature, roadNameToUse, lineDirectionOutput, countyNumber])
-        
-        if "newLineFeature" in locals():
-            del newLineFeature
-        else:
-            pass
-    
-    
-    extensionLinesCursor = daInsertCursor(outputExtLines, ["SHAPE@", "roadNameForSplit", "LabelAngle", "County_Number"])
-    
-    for roadLinesToInsertItem in roadLinesToInsertList:
-        extensionLinesCursor.insertRow(roadLinesToInsertItem)
-    
-    if "extensionLinesCursor" in locals():
-        del extensionLinesCursor
-    else:
-        pass
-
-
-def extendPoint(pointGeometry, pointAngle, extDistance):
-    # Take a point geometry, then extend it along the point angle
-    # by the passed distance and return it. 
-    
-    origin_x = pointGeometry[0]
-    origin_y = pointGeometry[1]
-    
-    lineDirectionAngle_1 = pointAngle
-    lineDirectionAngle_2 = (pointAngle + 180) % 360
-    
-    
-    (disp_x_1, disp_y_1) = (extDistance * math.sin(math.radians(lineDirectionAngle_1)),
-                      extDistance * math.cos(math.radians(lineDirectionAngle_1)))
-    
-    (end_x_1, end_y_1) = (origin_x + disp_x_1, origin_y + disp_y_1)
-    
-    (disp_x_2, disp_y_2) = (extDistance * math.sin(math.radians(lineDirectionAngle_2)),
-                      extDistance * math.cos(math.radians(lineDirectionAngle_2)))
-    
-    (end_x_2, end_y_2) = (origin_x + disp_x_2, origin_y + disp_y_2)
-    
-    
-    startPoint = ArcgisPoint()
-    endPoint = ArcgisPoint()
-    
-    startPoint.ID = 0
-    startPoint.X = end_x_1
-    startPoint.Y = end_y_1
-    
-    endPoint.ID = 1
-    endPoint.X = end_x_2
-    endPoint.Y = end_y_2
-    
-    linePointsArray = ArcgisArray()
-    linePointsArray.add(startPoint)
-    linePointsArray.add(endPoint)
-    
-    newLineFeature = ArcgisPolyLine(linePointsArray)
-    
-    # Need to create an extension for both ends of the line and add them
-    # to the array.
-    
-    #newLineFeature = createdExtensionLinesCursor.newRow()
-    
-    #newLineFeature.SHAPE = linePointsArray
-    
-    lineDirectionOutput = "0"
-    
-    if lineDirectionAngle_1 > 0:
-        lineDirectionOutput = lineDirectionAngle_1
-    elif lineDirectionAngle_2 > 0:
-        lineDirectionOutput = lineDirectionAngle_2
-    else:
-        pass
-    
-    returnGeomAndAngle = [newLineFeature, lineDirectionOutput]
-    
-    return returnGeomAndAngle
-
-
-def initializeRosettePoints(gdbToUse, countyRosette, countyRosetteText):
-    if Exists(countyRosette):
-        Delete_management(countyRosette)
-    else:
-        pass
-    
-    CreateFeatureclass_management(gdbToUse, countyRosetteText, "POINT", "", "", "", spatialReferenceProjection)
-    
-    AddField_management(countyRosette, "roadNameForSplit", "TEXT", "", "", "55")
-    
-    AddField_management(countyRosette, "LabelAngle", "DOUBLE", "", "", "") # Changed to double.
-    
-    AddField_management(countyRosette, "County_Number", "DOUBLE", "", "", "")
-    
-    AddField_management(countyRosette, "COUNTY_NAME", "TEXT", "", "", "55")
+    # Might also need to check for and erase points that have a label angle which
+    # is more than 20 degrees off from 0, 90, 180, 270, as these are likely to
+    # be minor roads.
+    # ^ The script currently does this.
+    
+    # Consider reorganizing to be more than one function instead of being a ~300 line long function.
 
 
 def labelAngleNormalization(quarterOrHalf):
@@ -1535,21 +998,159 @@ def labelAngleNormalization(quarterOrHalf):
     
     
     print "Label angle normalization complete!"
-    print "Done extending and intersecting road features."
-    # Need to break this into two pieces and pass some of the inmemorylayers
+    print "Done extending and intersecting road features." # Need to break this into two pieces and pass some of the inmemorylayers
     # from the first function to the 2nd or similar.
     # the function is just too long to be easily readable/debuggable.
+
+
+def thresholdRemoval(quarterOrHalf):
+    # Change to look at the number of roads that are in the
+    # county's erased polygon. -- the erased?
+    # Then, if there are not at least that % of the
+    # roads labeled as points in the pointIntersection
+    # layer, remove ALL points for that county.
     
-    ## 2016-02-18:
-    ## For best results, need to call this after the duplicate name removal
-    ## and duplicate name removal needs to use the point's angle in it's
-    ## decision about which points to remove.
+    # Rewrite this to test for the number of null points.
+    
+    # 1 through 100, percentage as integer. ## 25 seems to work well. Results in only 12 counties not having enough points.
+    thresholdValue = 25 
+    # One county (42) doesn't have enough roads information for this script to do anything at all.
+    
+    if quarterOrHalf.lower() == "quarter":
+        countyRoadNameRosette = countyRoadNameRosette_Q
+    elif quarterOrHalf.lower() == "half":
+        countyRoadNameRosette = countyRoadNameRosette_H
+    else:
+        print "quarterOrHalf variable not correctly defined."
+        raise(Exception("quarterOrHalf error."))
+    
+    #makefeaturelayer1
+    MakeFeatureLayer_management(countyRoadsFeature, "loadedCountyRoads")
+    #makefeaturelayer2
+    MakeFeatureLayer_management(countyRoadNameRosette, "loadedRoadNameRosette")
+    
+    for i in xrange(1, 106):
+        roadThresholdWhereClause = """ "COUNTY_NUMBER" = """ + str(i) + """ """
+        rosetteThresholdWhereClause = """ "COUNTY_NUMBER" = ' """ + str(i) + """ ' """
+        
+        #selectfeatures1
+        SelectLayerByAttribute_management("loadedCountyRoads", "NEW_SELECTION", roadThresholdWhereClause)
+        #selectfeatures2
+        SelectLayerByAttribute_management("loadedRoadNameRosette", "NEW_SELECTION", rosetteThresholdWhereClause)
+        
+        #createfeaturelayer with whereclause, or do this then make a select clause.
+        countyRoadsCount = GetCount_management("loadedCountyRoads")
+        countyPointsCount = GetCount_management("loadedRoadNameRosette")
+        
+        countyRoadsCount = int(countyRoadsCount.getOutput(0))
+        countyPointsCount = int(countyPointsCount.getOutput(0))
+        
+        if countyRoadsCount >= 1:
+            if (float(countyPointsCount) / float(countyRoadsCount)) >= (float(thresholdValue) / float(100)) and countyPointsCount >= 20:
+                print "Threshold value OK for County Number: " + str(i) + "."
+                pass
+            else:
+                print "Threshold value not met for County Number: " + str(i) + "."
+                if countyPointsCount >= 1:
+                    print "Removing road name rosette points from this county."
+                    DeleteRows_management("loadedRoadNameRosette")
+                else:
+                    print "Would have deleted the points for this county, but none exist to delete."
+        else:
+            print "No County Roads found for County Number: " + str(i) + "."
+
+
+def duplicateNameRemoval(quarterOrHalf):
+    
+    if quarterOrHalf.lower() == "quarter":
+        countyRoadNameRosette = countyRoadNameRosette_Q
+    elif quarterOrHalf.lower() == "half":
+        countyRoadNameRosette = countyRoadNameRosette_H
+    else:
+        print "quarterOrHalf variable not correctly defined."
+        raise(Exception("quarterOrHalf error."))
+    
+    print "Starting duplicate name removal."
+    
+    countyRoadNameRosetteFields = ListFields(countyRoadNameRosette)
+    
+    print "countyRoadNameRosetteFields: "
+    
+    for fieldItem in countyRoadNameRosetteFields:
+        print str(fieldItem.name)
+    
+    newCursor = daSearchCursor(countyRoadNameRosette, countyRoadNameRosetteFieldsObjShape)
+    
+    # Debug only
+    #print "Created a new cursor..."
+    
+    countyNamePointList = list()
+    
+    for eachPoint in newCursor:
+        countyNamePointList.append(eachPoint)
+    
+    try:
+        del newCursor
+    except:
+        pass
+    
+    # Debug only
+    #print "Completed using the new cursor."
+    
+    pointDeleteList = list()
+    
+    for pointItem in countyNamePointList:
+        for pointToCheck in countyNamePointList:
+            # If the points share a road name, and a county number, but not the same ObjectID...
+            if pointItem[0] not in pointDeleteList:
+                if pointItem[3] == pointToCheck[3] and str(pointItem[2]).upper() == str(pointToCheck[2]).upper() and (not pointItem[0] == pointToCheck[0]):
+                    # Use the distance formula to check to see if these points are within a
+                    # certain distance from one another.
+                    # If so, add the pointToCheck to the pointDeleteList.
+                    distance = 0
+                    point1 = pointItem[1]
+                    point2 = pointToCheck[1]
+                    
+                    
+                    distance = calcPointDistance(point1, point2)
+                    
+                    
+                    # Change this to add just the objectid to the pointDeleteList
+                    # instead of the whole point row to increase the speed
+                    # of the check when the list grows to a decent size.
+                    # Distance of 10000 seems to give good results.
+                    if distance >= 0 and distance < 10000 and pointToCheck[0] not in pointDeleteList:
+                        pointDeleteList.append(pointToCheck[0])
+                    else:
+                        pass
+                else:
+                    pass
+            else:
+                pass
+    
+    newCursor = daUpdateCursor(countyRoadNameRosette, countyRoadNameRosetteFieldsObjShape)
+    
+    for updateableRow in newCursor:
+        for pointToDeleteOID in pointDeleteList:
+            if updateableRow[0] == pointToDeleteOID:
+                print "Selected a point for " + str(updateableRow[2]) + " in " + str(updateableRow[4]) + " county to delete."
+                newCursor.deleteRow()
+                print "Point deleted."
+            else:
+                pass
+        #updateCursor
+        #delete pointToDelete from countyRoadNameRosette.
+        #print a message saying that the point was deleted.
+    
+    try:
+        del newCursor
+    except:
+        pass
 
 
 if __name__ == "__main__":
     startingTime = datetime.datetime.now()
-    
-    
+
     ######################### From MapPreprocessing
     #
     route_endings_generation()
@@ -1562,31 +1163,31 @@ if __name__ == "__main__":
     countyBuffersAndNon_StateErase()
     countyOnlyBridgeExport()
     createCountyLinesForEachCounty()
-    
+
     ######################### End of MapPreprocessing
     #
+    
     
     removeSmallRoads()
     
     scaleValue = "quarter"
     
     extendAndIntersectRoadFeatures(scaleValue)
-    #thresholdRemoval(scaleValue)
-    #duplicateNameRemoval(scaleValue)
-    #labelAngleNormalization(scaleValue)
+    labelAngleNormalization(scaleValue)
+    thresholdRemoval(scaleValue)
+    duplicateNameRemoval(scaleValue)
     
     scaleValue = "half"
-    
     extendAndIntersectRoadFeatures(scaleValue)
-    ##thresholdRemoval(scaleValue)
-    ##duplicateNameRemoval(scaleValue)
-    ##labelAngleNormalization(scaleValue)
+    labelAngleNormalization(scaleValue)
+    thresholdRemoval(scaleValue)
+    duplicateNameRemoval(scaleValue)
     
     endingTime = datetime.datetime.now()
     
     scriptDuration = FindDuration(endingTime, startingTime)
     
-    print "\n" # Newline for improved readability.
+    print "\n" # Newline for better readability.
     print "For the main/complete script portion..."
     print "Starting Time: " + str(startingTime)
     print "Ending Time: " + str(endingTime)

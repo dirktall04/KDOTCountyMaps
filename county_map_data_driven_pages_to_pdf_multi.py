@@ -383,10 +383,10 @@ def mainProcessMapExports(mapPrefixName, mapsLocation, outputLocation, exportVal
     #    print (resultItem + "\n " + 
     #    "Retrieved time: " + str(datetime.datetime.now()))
     
-    # Wait for a few seconds for the locks to be released on the
+    # Wait for several seconds for the locks to be released on the
     # maps prior to deletion.
     print "Waiting a moment to be sure that all of the locks have been removed..."
-    time.sleep(10)
+    time.sleep(100)
     # Remove the _Mirrored maps so that they can be recreated
     # with updated data next time.
     # Map directory cleanup. Removes the mirrored files so they can be rebuilt fresh next run.

@@ -49,7 +49,7 @@ except:
 
 
 sourceLocation = r"\\dt00mh02\planning\Cart\Maps\County" ## Upper level folder that contains the half and quarter inch folders
-targetLocation = r'\\' + copy_map_server + '\D$\arcgisserver\directories\arcgisoutput\County' ## Upper level folder that contains the half and quarter inch folders.
+targetLocation = r"\\dt00ar50\D$\arcgisserver\directories\arcgisoutput\County" ## Upper level folder that contains the half and quarter inch folders.
 
 quarterDirName = r"quarterInch"
 halfDirName = r"halfInch"
